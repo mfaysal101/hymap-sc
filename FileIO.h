@@ -7,7 +7,7 @@
 #include <fstream>
 #include "Node.h"
 #include "Module.h"
-#include </global/common/sw/cray/cnl7/haswell/metis/5.1.0/intel/19.0.3.199/nbtsmmb/include/metis.h>
+
 
 using namespace std;
 

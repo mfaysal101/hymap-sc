@@ -15,10 +15,10 @@
 #include "FileIO.h"
 #include "timing.h"
 #include <mpi.h>
-#include </global/common/sw/cray/cnl7/haswell/metis/5.1.0/intel/19.0.3.199/nbtsmmb/include/metis.h>
 #include "global.h"
-#include </opt/intel/vtune_profiler_2020.2.0.610396/include/ittnotify.h>
 #include <chrono>
+#include <set>
+#include <asa/asa.h>
 
 
 using namespace std;
@@ -41,7 +41,7 @@ double randomNumberGeneratorTime;
 double bestModuleSelectionTime;
 double prioritizeSpNodeModuleAccessTimeChunk;
 double bestSpModuleSelectionTime;
-vector<double>threadtimes(68, 0.0);
+vector<double>threadtimes;
 double prioritizeSpNodeCommunicationTime;
 double prioritizeNodeCommunicationTime;
 double prioritizeSpNodeSyncTime;
@@ -54,7 +54,8 @@ int iterations_updateMembers;
 int iteration_convertModules;
 int iteration_prioritizeMove;
 int iteration_prioritizeSpMove;
-
+vector<double> iterations_times;
+vector<double> iterationwise_hashtimes;
 
 unsigned stou(char *s) {
 	return strtoul(s, (char **) NULL, 10);
@@ -91,7 +92,6 @@ int main(int argc, char *argv[]) {
 		exit(-1);
 	}
 	
-	//__itt_pause();
 	totalExecutionTime = 0.0;
 	convert2SpNodeTime = 0.0;
 	computePageRankTime = 0.0;
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
 	string line;
 	string buf;
 
-	MTRand *R = new MTRand(stou(argv[1]));
+	//MTRand *R = new MTRand(stou(argv[1]));
 
 	string infile = string(argv[2]);
 	string networkFile = string(argv[2]);
@@ -154,6 +154,8 @@ int main(int argc, char *argv[]) {
 		prior = true;
 
 	string metisFile = string(argv[10]);
+	
+	asa::init();
 
 	bool includeSelfLinks = false;
 	if (argc == 12) 
@@ -167,12 +169,14 @@ int main(int argc, char *argv[]) {
 
 	Network origNetwork;	// default constructor is called.
 
-	origNetwork.R = R;
+	//origNetwork.R = R;
 
 	// time values for measuring elapsed times for each step...
 	struct timeval allStart, allEnd;
 	struct timeval noIOstart, noIOend;
 	struct timeval start, end;
+
+	threadtimes.resize(numThreads, 0.0);
 
 	gettimeofday(&allStart, NULL);
 	gettimeofday(&start, NULL);
@@ -390,7 +394,8 @@ int main(int argc, char *argv[]) {
 		outFile << origNetwork.nodes[i].ModIdx() + 1 << "\x0D\x0A";
 	}
 	outFile.close();
-  
+	delete[] origNetwork.allNodes;
+	
 	auto tok = std::chrono::high_resolution_clock::now();
 	totalExecutionTime = std::chrono::duration_cast<std::chrono::nanoseconds>(tok - tik).count();
 
@@ -399,33 +404,38 @@ int main(int argc, char *argv[]) {
     	MPI_Comm_rank(MPI_COMM_WORLD,&myrank);
 
     	if(myrank==0)
-	{
-		printf("========totalexecutiontime:%f========\n", totalExecutionTime*(1e-9));
-		printf("========networkReadTime:%f========\n", networkReadTime*(1e-9));
-		printf("========initiationTime:%f========\n", initiationTime*(1e-9));
-		printf("========calibrationTime:%0.9f========\n", calibrationTime*(1e-9));
-		printf("========computePageRankTime:%f========\n", computePageRankTime*(1e-9));
-		printf("========convert2SpNodeTime:%0.9f========in iterations:%d========\n", convert2SpNodeTime*(1e-9), iteration_convertModules);
-		printf("========convertModulePart1:%0.9f========\n", convertModulePart1*(1e-9));
-		printf("========convertModulePart2:%0.9f========\n", convertModulePart2*(1e-9));
-		printf("========convertModulePart3:%0.9f========\n", convertModulePart3*(1e-9));
-		printf("========updateMembersTime:%0.9f========in %d iterations========\n", updateMembersTime*(1e-9), iterations_updateMembers);
-		printf("========prioritizeMoveTime:%0.9f========in %d iterations========\n", prioritizeMoveTime*(1e-9), iteration_prioritizeMove);
-		printf("========prioritizeSpNodeMoveTime:%0.9f========in %d iterations========\n", prioritizeSpNodeMoveTime*(1e-9), iteration_prioritizeSpMove);
-		printf("========prioritizeMoveNodeAccessTimeChunk:%0.9f=======bestModuleSelectionTime:%0.9f==========\n", prioritizeMoveNodeAccessTimeChunk*(1e-9), bestModuleSelectionTime*(1e-9));
-		printf("========prioritizeSpNodeModuleAccessTimeChunk:%0.9f=======bestSpModuleSelectionTime:%0.9f==========\n", prioritizeSpNodeModuleAccessTimeChunk*(1e-9), bestSpModuleSelectionTime*(1e-9));
-		printf("========prioritizeNodeCommunicationTime:%0.9f========\n", prioritizeNodeCommunicationTime*(1e-9));
-		printf("========prioritizeSpNodeCommunicationTime:%0.9f========\n", prioritizeSpNodeCommunicationTime*(1e-9));
-		printf("========prioritizeNodeSyncTime:%0.9f========\n", prioritizeNodeSyncTime*(1e-9));
-		printf("========prioritizeSpNodeSyncTime:%0.9f========\n", prioritizeSpNodeSyncTime*(1e-9));
-		
-		/*
-		for(int k = 0; k < 68; k++)
 		{
-			printf("threadtimes[%d]:%0.9f\n", k, threadtimes[k]*(1e-9));
+			printf("========totalexecutiontime:%f========\n", totalExecutionTime*(1e-9));
+			printf("========networkReadTime:%f========\n", networkReadTime*(1e-9));
+			printf("========initiationTime:%f========\n", initiationTime*(1e-9));
+			printf("========calibrationTime:%0.9f========\n", calibrationTime*(1e-9));
+			printf("========computePageRankTime:%f========\n", computePageRankTime*(1e-9));
+			printf("========convert2SpNodeTime:%0.9f========in iterations:%d========\n", convert2SpNodeTime*(1e-9), iteration_convertModules);
+			printf("========convertModulePart1:%0.9f========\n", convertModulePart1*(1e-9));
+			printf("========convertModulePart2:%0.9f========\n", convertModulePart2*(1e-9));
+			printf("========convertModulePart3:%0.9f========\n", convertModulePart3*(1e-9));
+			printf("========updateMembersTime:%0.9f========in %d iterations========\n", updateMembersTime*(1e-9), iterations_updateMembers);
+			printf("========prioritizeMoveTime:%0.9f========in %d iterations========\n", prioritizeMoveTime*(1e-9), iteration_prioritizeMove);
+			printf("========prioritizeSpNodeMoveTime:%0.9f========in %d iterations========\n", prioritizeSpNodeMoveTime*(1e-9), iteration_prioritizeSpMove);
+			printf("========prioritizeMoveNodeAccessTimeChunk:%0.9f=======bestModuleSelectionTime:%0.9f==========\n", prioritizeMoveNodeAccessTimeChunk*(1e-9), bestModuleSelectionTime*(1e-9));
+			printf("========prioritizeSpNodeModuleAccessTimeChunk:%0.9f=======bestSpModuleSelectionTime:%0.9f==========\n", prioritizeSpNodeModuleAccessTimeChunk*(1e-9), bestSpModuleSelectionTime*(1e-9));
+			printf("========prioritizeNodeCommunicationTime:%0.9f========\n", prioritizeNodeCommunicationTime*(1e-9));
+			printf("========prioritizeSpNodeCommunicationTime:%0.9f========\n", prioritizeSpNodeCommunicationTime*(1e-9));
+			printf("========prioritizeNodeSyncTime:%0.9f========\n", prioritizeNodeSyncTime*(1e-9));
+			printf("========prioritizeSpNodeSyncTime:%0.9f========\n", prioritizeSpNodeSyncTime*(1e-9));
+			
+			for(int k = 0; k < iterations_times.size(); k++)
+			{
+				printf("iterations_times[%d]:%0.9f, iterationwise_hashtimes[%d]:%0.9f\n", k, iterations_times[k]*(1e-9), k, iterationwise_hashtimes[k]*(1e-9));
+			}
+			
+			/*
+			for(int k = 0; k < 68; k++)
+			{
+				printf("threadtimes[%d]:%0.9f\n", k, threadtimes[k]*(1e-9));
+			}
+			*/		
 		}
-		*/		
-	}
 	MPI_Finalize();
 }
 
@@ -486,7 +496,9 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 		{
 			if (prior) 
 			{
+				asa::roi_begin();
 				numMoved = network.prioritize_move(vThresh, numTh, inLoop);
+				asa::roi_end();
 			} 
 			else 
 			{
@@ -497,7 +509,9 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 		{
 			if (prior) 
 			{
+				asa::roi_begin();
 				numMoved = network.prioritize_moveSPnodes(vThresh, numTh, iter, inLoop);
+				asa::roi_end();
 			} 
 			else 
 			{
@@ -549,7 +563,9 @@ void stochastic_greedy_partition(Network &network, int numTh, double threshold, 
 
 			if (prior) 
 			{
+				asa::roi_begin();
 				numMoved = network.prioritize_moveSPnodes(vThresh, numTh, spIter, inLoop);
+				asa::roi_end();
 			} 
 			else
 			{

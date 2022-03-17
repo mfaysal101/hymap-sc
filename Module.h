@@ -8,8 +8,6 @@
 #include <set>
 #include "Node.h"
 #include "MersenneTwister.h"
-#include </global/common/sw/cray/cnl7/haswell/metis/5.1.0/intel/19.0.3.199/nbtsmmb/include/metis.h>
-
 
 //class Module;
 //class Network;
@@ -103,51 +101,18 @@ class Network {
 	double sumAllExitPr;			// SUM (exitPr_i)  i = 1 .. nModule
 
 public:
-	static const double alpha = 0.15;
+	static constexpr double alpha = 0.15;
 	//static const double beta = 1.0 - alpha;
-	static const double beta = 1.0 - 0.15;
+	static constexpr double beta = 1.0 - 0.15;
 
 	MTRand *R;
 
 	int *processTags;
-	idx_t* xadj;
-	idx_t* adjacency;
-	idx_t nvtxs;
-	idx_t ncon;
-	idx_t nParts;
-	idx_t objval;
-	idx_t* part;
 	vector<int> myVertices;
 
 	//parmetis datastorage
 
-	idx_t *vtxdist;
-
-	idx_t *parmetis_xadj;
-
-	idx_t *parmetis_adjacency;
-
-	idx_t *vwgt;
-
-	idx_t *adjwgt;
-
-	idx_t wgtflag;
-
-	idx_t numflag;
-
-	idx_t parmetis_ncon;
-
-	idx_t *parmetis_nParts;
-
-	real_t *tpwgts;
-
-	real_t *ubvec;
-
-	idx_t *options;
-
-	idx_t edgecut;
-
-	idx_t *parmetis_part;
+	
 
 	int* allNodes; //this contains the merging result of all the nodes from different rank parmetis output
 

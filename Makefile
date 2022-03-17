@@ -1,11 +1,13 @@
 # Various flags
-CXX  = CC
+CXX  = mpic++
 LINK = $(CXX)
 #CXXFLAGS = -I -Wall -g 
-CXXFLAGS = -g -Wall -O3 -fopenmp  #-I #-Wall -O3 -funroll-loops -pipe 
+CXXFLAGS = -g -Wall -O3 -fopenmp --std=c++11 -fsanitize=undefined -I/home/mfaysal/asa_opt/include #-I #-Wall -O3 -funroll-loops -pipe 
 #CXXFLAGS = -g -Wall -fopenmp #-I #-Wall -O3 -funroll-loops -pipe 
-LFLAGS =  -g -fopenmp -Wall -Werror -O3
+LFLAGS =  -g -fopenmp -Wall -Werror -O3 -fsanitize=undefined -fuse-ld=gold
 
+LIB=-L/home/mfaysal/asa_opt/lib/
+LDFLAGS="-Wl,-rpath,/home/mfaysal/asa_opt/lib/"
 
 TARGET  = ompInfomap
 
@@ -15,7 +17,7 @@ FILES = OmpRelaxmap.cpp Node.cpp Module.cpp FileIO.cpp timing.cpp global.cpp
 OBJECTS = $(FILES:.cpp=.o)
 
 $(TARGET): ${OBJECTS}
-	$(LINK) $(LFLAGS) -std=c++11 $^ -o $@ -lmetis 
+	$(LINK) $(LFLAGS) $(LIB) $(LDFLAGS) $^ -o  $@ -lasa
 
 all: $(TARGET)
 

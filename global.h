@@ -36,5 +36,8 @@ extern int iteration_convertModules;
 extern int iteration_prioritizeMove;
 extern int iteration_prioritizeSpMove;
 
+extern std::vector<double> iterations_times;
+extern std::vector<double> iterationwise_hashtimes;
+
 
 #endif
