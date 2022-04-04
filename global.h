@@ -36,8 +36,15 @@ extern int iteration_convertModules;
 extern int iteration_prioritizeMove;
 extern int iteration_prioritizeSpMove;
 
-extern std::vector<double> iterations_times;
-extern std::vector<double> iterationwise_hashtimes;
+extern double asa_timer;
+extern double baseline_timer;
+extern double gatherCAM_timer;
+extern double overflow_timer;
+
+extern std::vector<double>iterationwise_times;
+
+
+
 
 
 #endif

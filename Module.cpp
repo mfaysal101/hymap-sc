@@ -1016,8 +1016,6 @@ int Network::prioritize_move(double vThresh, int numTh, bool inWhile)
 	//mark 1 end
 
 	omp_set_num_threads(numTh);
-	
-	double hash_time = 0.0;
 
 #pragma omp parallel for
 	for (int i = 0; i < myPortionVertexSize; i++) 
@@ -1075,9 +1073,123 @@ int Network::prioritize_move(double vThresh, int numTh, bool inWhile)
 		});
 		
 		auto tik1 = std::chrono::high_resolution_clock::now();
-		hash_time += std::chrono::duration_cast<std::chrono::nanoseconds>(tik1 - tik).count();
+
+		baseline_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tik1 - tik).count(); 
 		
-		if (nModLinks != outFlowToMod.size()) {
+		auto tm3 = std::chrono::high_resolution_clock::now();
+		
+		std::vector<std::pair<asa::key_t, asa::value_t>> outflow_nonoverflowed_pairs;
+		std::vector<std::pair<asa::key_t, asa::value_t>> outflow_overflowed_pairs;
+		
+		std::vector<std::pair<asa::key_t, asa::value_t>> inflow_nonoverflowed_pairs;
+		std::vector<std::pair<asa::key_t, asa::value_t>> inflow_overflowed_pairs;
+		
+		asa::run_if<asa::tag::asa>::call([&]() 
+		{
+			for(link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
+			{
+				auto k = nodes[linkIt->first].ModIdx();
+				asa::accumulate(tid, std::hash<key_t>()(k), k);
+			}
+			
+			auto tm5 = std::chrono::high_resolution_clock::now();
+
+			asa::gather_CAM(tid, outflow_nonoverflowed_pairs, outflow_overflowed_pairs);
+
+			auto tm6 = std::chrono::high_resolution_clock::now();
+
+			gatherCAM_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm6 - tm5).count();
+
+			auto tm7 = std::chrono::high_resolution_clock::now();
+
+			if(!outflow_overflowed_pairs.empty())
+			{
+				for ( auto& item : outflow_overflowed_pairs) 
+				{
+					outflow_nonoverflowed_pairs.push_back(item);
+				}
+
+				std::sort(outflow_nonoverflowed_pairs.begin(), outflow_nonoverflowed_pairs.end());
+						  
+				auto new_it = outflow_nonoverflowed_pairs.begin();
+				
+				for ( auto it = outflow_nonoverflowed_pairs.begin()+1; it != outflow_nonoverflowed_pairs.end(); ++it) 
+				{
+					if (it->first == new_it->first) 
+					{
+						new_it->second += it->second;
+					} 
+					else 
+					{
+						++new_it;
+						new_it->second = it->second;
+					}
+				}
+				outflow_nonoverflowed_pairs.erase(new_it + 1, outflow_nonoverflowed_pairs.end());
+				//the following function call is to ensure compiler not optimizing away
+				//the code because of the accumulated values being never used anywhere else
+				asa::add_scalar(tid, new_it->first);
+			}
+			auto tm8 = std::chrono::high_resolution_clock::now();
+			overflow_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm8 - tm7).count();
+		});
+		
+		asa::run_if<asa::tag::asa>::call([&]() 
+		{
+			for(link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+			{
+				auto k = nodes[linkIt->first].ModIdx();
+				asa::accumulate(tid, std::hash<key_t>()(k), k);
+			}
+			
+			auto tm5 = std::chrono::high_resolution_clock::now();
+
+			asa::gather_CAM(tid, inflow_nonoverflowed_pairs, inflow_overflowed_pairs);
+
+			auto tm6 = std::chrono::high_resolution_clock::now();
+
+			gatherCAM_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm6 - tm5).count();
+
+			auto tm7 = std::chrono::high_resolution_clock::now();
+			if(!inflow_overflowed_pairs.empty())
+			{
+				for (auto& item : inflow_overflowed_pairs) 
+				{
+					inflow_nonoverflowed_pairs.push_back(item);
+				}
+
+				std::sort(inflow_nonoverflowed_pairs.begin(), inflow_nonoverflowed_pairs.end());
+						  
+				auto new_it = inflow_nonoverflowed_pairs.begin();
+				
+				for ( auto it = inflow_nonoverflowed_pairs.begin()+1; it != inflow_nonoverflowed_pairs.end(); ++it) 
+				{
+					if (it->first == new_it->first) 
+					{
+						new_it->second += it->second;
+					} 
+					else 
+					{
+						++new_it;
+						new_it->second = it->second;
+					}
+				}
+				inflow_nonoverflowed_pairs.erase(new_it+1, inflow_nonoverflowed_pairs.end());
+				//the following function call is to ensure compiler not optimizing away
+				//the code because of the accumulated values being never used anywhere else
+				asa::add_scalar(tid, new_it->first);
+			}
+			auto tm8 = std::chrono::high_resolution_clock::now();
+			overflow_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm8 - tm7).count();
+			
+		});
+
+		auto tm4 = std::chrono::high_resolution_clock::now();
+
+		asa_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm4 - tm3).count();
+
+		if (nModLinks != outFlowToMod.size()) 
+		{
 			cout
 					<< "ALERT: nModLinks != outFlowToMod.size() in Network::prioritize_move()."
 					<< endl;
@@ -1097,23 +1209,69 @@ int Network::prioritize_move(double vThresh, int numTh, bool inWhile)
 		double additionalTeleportInFlow = (alpha * (oldSumPr1 - ndSize) + beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
 
 		int newMod;
-
-		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) 
+		
+		auto tm9 = std::chrono::high_resolution_clock::now();
+		
+		asa::run_if<asa::tag::baseline>::call([&]() 
 		{
-			newMod = it->first;
+			for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) 
+			{
+				newMod = it->first;
 
-			if (newMod == oldMod) 
-			{
-				outFlowToMod[newMod] += additionalTeleportOutFlow;
-				inFlowFromMod[newMod] += additionalTeleportInFlow;
-			} 
-			else 
-			{
-				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
-				inFlowFromMod[newMod] += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				if (newMod == oldMod) 
+				{
+					outFlowToMod[newMod] += additionalTeleportOutFlow;
+					inFlowFromMod[newMod] += additionalTeleportInFlow;
+				} 
+				else 
+				{
+					outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
+					inFlowFromMod[newMod] += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				}
 			}
-		}
+		});
+		
+		auto tm10 = std::chrono::high_resolution_clock::now();
+		
+		baseline_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm10 - tm9).count();
+		
+		auto tm11 = std::chrono::high_resolution_clock::now();
+		
+		asa::run_if<asa::tag::asa>::call([&]() 
+		{
+			for(auto outflow_it = outflow_nonoverflowed_pairs.begin(); outflow_it != outflow_nonoverflowed_pairs.end(); outflow_it++)
+			{
+				newMod = outflow_it->first;
+				
+				if (newMod == oldMod) 
+				{
+					outflow_it->second += additionalTeleportOutFlow;
+				} 
+				else 
+				{
+					outflow_it->second += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
+				}
+			}
+			
+			for(auto inflow_it = inflow_nonoverflowed_pairs.begin(); inflow_it != inflow_nonoverflowed_pairs.end(); inflow_it++)
+			{
+				newMod = inflow_it->first;
+				
+				if (newMod == oldMod) 
+				{
+					inflow_it->second += additionalTeleportInFlow;
+				} 
+				else 
+				{
+					inflow_it->second += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				}
+			}
+		});
 
+		auto tm12 = std::chrono::high_resolution_clock::now();
+		
+		asa_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm12 - tm11).count();
+				
 		double outFlowToOldMod = additionalTeleportOutFlow;
 		double inFlowFromOldMod = additionalTeleportInFlow;
 
@@ -1459,8 +1617,8 @@ int Network::prioritize_move(double vThresh, int numTh, bool inWhile)
 	auto end_time = std::chrono::high_resolution_clock::now();
 
 	prioritizeMoveTime += std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count();
-	iterations_times.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count());
-	iterationwise_hashtimes.push_back(hash_time);
+	
+	iterationwise_times.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time).count());
 	
 	return numMoved;
 
@@ -2771,37 +2929,158 @@ int Network::prioritize_moveSPnodes(double vThresh, int numTh, int iteration, bo
 
 		auto tik = std::chrono::high_resolution_clock::now();
 
-		for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) 
+		asa::run_if<asa::tag::baseline>::call([&]() 
 		{
-			int newMod = superNodes[linkIt->first].ModIdx();
+			for (link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++) 
+			{
+				int newMod = superNodes[linkIt->first].ModIdx();
 
-			if (outFlowToMod.count(newMod) > 0) 
-			{
-				outFlowToMod[newMod] += beta * linkIt->second;
-			} 
-			else 
-			{
-				outFlowToMod[newMod] = beta * linkIt->second; // initialization of the outFlow of the current newMod.
-				inFlowFromMod[newMod] = 0.0;
-				nModLinks++;
+				if (outFlowToMod.count(newMod) > 0) 
+				{
+					outFlowToMod[newMod] += beta * linkIt->second;
+				} 
+				else 
+				{
+					outFlowToMod[newMod] = beta * linkIt->second; // initialization of the outFlow of the current newMod.
+					inFlowFromMod[newMod] = 0.0;
+					nModLinks++;
+				}
 			}
-		}
 
-		for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) 
+			for (link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++) 
+			{
+				int newMod = superNodes[linkIt->first].ModIdx();
+
+				if (inFlowFromMod.count(newMod) > 0) 
+				{
+					inFlowFromMod[newMod] += beta * linkIt->second;
+				} 
+				else 
+				{
+					outFlowToMod[newMod] = 0.0;
+					inFlowFromMod[newMod] = beta * linkIt->second;
+					nModLinks++;
+				}
+			}
+		});
+		
+		auto tik1 = std::chrono::high_resolution_clock::now();
+		baseline_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tik1 - tik).count();
+		
+		auto tm3 = std::chrono::high_resolution_clock::now();
+
+		std::vector<std::pair<asa::key_t, asa::value_t>> outflow_nonoverflowed_pairs;
+		std::vector<std::pair<asa::key_t, asa::value_t>> outflow_overflowed_pairs;
+		
+		std::vector<std::pair<asa::key_t, asa::value_t>> inflow_nonoverflowed_pairs;
+		std::vector<std::pair<asa::key_t, asa::value_t>> inflow_overflowed_pairs;
+
+
+		asa::run_if<asa::tag::asa>::call([&]() 
 		{
-			int newMod = superNodes[linkIt->first].ModIdx();
-
-			if (inFlowFromMod.count(newMod) > 0) 
+			for(link_iterator linkIt = nd.outLinks.begin(); linkIt != nd.outLinks.end(); linkIt++)
 			{
-				inFlowFromMod[newMod] += beta * linkIt->second;
-			} 
-			else 
-			{
-				outFlowToMod[newMod] = 0.0;
-				inFlowFromMod[newMod] = beta * linkIt->second;
-				nModLinks++;
+				auto k = superNodes[linkIt->first].ModIdx();
+				asa::accumulate(tid, std::hash<key_t>()(k), k);
 			}
-		}
+			
+			auto tm5 = std::chrono::high_resolution_clock::now();
+
+			asa::gather_CAM(tid, outflow_nonoverflowed_pairs, outflow_overflowed_pairs);
+
+			auto tm6 = std::chrono::high_resolution_clock::now();
+
+			gatherCAM_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm6 - tm5).count();
+
+			auto tm7 = std::chrono::high_resolution_clock::now();
+			if(!outflow_overflowed_pairs.empty())
+			{
+				for ( auto& item : outflow_overflowed_pairs) 
+				{
+					outflow_nonoverflowed_pairs.push_back(item);
+				}
+
+				std::sort(outflow_nonoverflowed_pairs.begin(), outflow_nonoverflowed_pairs.end());
+						  
+				auto new_it = outflow_nonoverflowed_pairs.begin();
+				
+				for ( auto it = outflow_nonoverflowed_pairs.begin() + 1; it != outflow_nonoverflowed_pairs.end(); ++it) 
+				{
+					if (it->first == new_it->first) 
+					{
+						new_it->second += it->second;
+					} 
+					else 
+					{
+						++new_it;
+						new_it->second = it->second;
+					}
+				}
+				outflow_nonoverflowed_pairs.erase(new_it+1, outflow_nonoverflowed_pairs.end());
+				//the following function call is to ensure compiler not optimizing away
+				//the code because of the accumulated values being never used anywhere else
+				asa::add_scalar(tid, new_it->first);
+			}
+			auto tm8 = std::chrono::high_resolution_clock::now();
+			overflow_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm8 - tm7).count();
+		});
+
+		asa::run_if<asa::tag::asa>::call([&]() 
+		{
+			for(link_iterator linkIt = nd.inLinks.begin(); linkIt != nd.inLinks.end(); linkIt++)
+			{
+				auto k = superNodes[linkIt->first].ModIdx();
+				asa::accumulate(tid, std::hash<key_t>()(k), k);
+			}
+			
+			auto tm5 = std::chrono::high_resolution_clock::now();
+
+			asa::gather_CAM(tid, inflow_nonoverflowed_pairs, inflow_overflowed_pairs);
+
+			auto tm6 = std::chrono::high_resolution_clock::now();
+
+			gatherCAM_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm6 - tm5).count();
+
+			auto tm7 = std::chrono::high_resolution_clock::now();
+
+			if(!inflow_overflowed_pairs.empty())
+			{
+				for (auto& item : inflow_overflowed_pairs) 
+				{
+					inflow_nonoverflowed_pairs.push_back(item);
+				}
+
+				std::sort(inflow_nonoverflowed_pairs.begin(), inflow_nonoverflowed_pairs.end());
+						  
+				auto new_it = inflow_nonoverflowed_pairs.begin();
+				
+				for ( auto it = inflow_nonoverflowed_pairs.begin()+1; it != inflow_nonoverflowed_pairs.end(); ++it) 
+				{
+					if (it->first == new_it->first) 
+					{
+						new_it->second += it->second;
+					} 
+					else 
+					{
+						++new_it;
+						new_it->second = it->second;
+					}
+				}
+				inflow_nonoverflowed_pairs.erase(new_it+1, inflow_nonoverflowed_pairs.end());
+				//the following function call is to ensure compiler not optimizing away
+				//the code because of the accumulated values being never used anywhere else
+				asa::add_scalar(tid, new_it->first);
+			}
+			auto tm8 = std::chrono::high_resolution_clock::now();
+			
+			overflow_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm8 - tm7).count();
+			
+		});
+
+		
+		auto tm4 = std::chrono::high_resolution_clock::now();
+
+		asa_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm4 - tm3).count();
 
 		if (nModLinks != outFlowToMod.size())
 			cout << "ALERT: nModLinks != outFlowToMod.size()." << endl;
@@ -2822,21 +3101,69 @@ int Network::prioritize_moveSPnodes(double vThresh, int numTh, int iteration, bo
 				+ beta * (oldSumDangling1 - ndDanglingSize)) * ndTPWeight;
 
 		// For teleportation and danling nodes.
-
-		for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) 
+		
+		auto tm9 = std::chrono::high_resolution_clock::now();
+		
+		int newMod = 0;
+		
+		asa::run_if<asa::tag::baseline>::call([&]() 
 		{
-			int newMod = it->first;
-			if (newMod == oldMod) 
+			for (flowmap::iterator it = outFlowToMod.begin(); it != outFlowToMod.end(); it++) 
 			{
-				outFlowToMod[newMod] += additionalTeleportOutFlow;
-				inFlowFromMod[newMod] += additionalTeleportInFlow;
-			} 
-			else 
-			{
-				outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
-				inFlowFromMod[newMod] += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				newMod = it->first;
+				if (newMod == oldMod) 
+				{
+					outFlowToMod[newMod] += additionalTeleportOutFlow;
+					inFlowFromMod[newMod] += additionalTeleportInFlow;
+				} 
+				else 
+				{
+					outFlowToMod[newMod] += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
+					inFlowFromMod[newMod] += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				}
 			}
-		}
+		});
+		
+		auto tm10 = std::chrono::high_resolution_clock::now();
+		
+		baseline_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm10 - tm9).count();
+
+		auto tm11 = std::chrono::high_resolution_clock::now();
+		
+		asa::run_if<asa::tag::asa>::call([&]() 
+		{
+			for(auto outflow_it = outflow_nonoverflowed_pairs.begin(); outflow_it != outflow_nonoverflowed_pairs.end(); outflow_it++)
+			{
+				newMod = outflow_it->first;
+				
+				if (newMod == oldMod) 
+				{
+					outflow_it->second += additionalTeleportOutFlow;
+				} 
+				else 
+				{
+					outflow_it->second += (alpha * ndSize + beta * ndDanglingSize) * modules[newMod].sumTPWeight;
+				}
+			}
+			
+			for(auto inflow_it = inflow_nonoverflowed_pairs.begin(); inflow_it != inflow_nonoverflowed_pairs.end(); inflow_it++)
+			{
+				newMod = inflow_it->first;
+				
+				if (newMod == oldMod) 
+				{
+					inflow_it->second += additionalTeleportInFlow;
+				} 
+				else 
+				{
+					inflow_it->second += (alpha * modules[newMod].sumPr + beta * modules[newMod].sumDangling) * ndTPWeight;
+				}
+			}
+		});
+
+		auto tm12 = std::chrono::high_resolution_clock::now();
+		
+		asa_timer += std::chrono::duration_cast<std::chrono::nanoseconds>(tm12 - tm11).count();
 
 		// Calculate flow to/from own module (default value if no links to own module).
 		double outFlowToOldMod = additionalTeleportOutFlow;

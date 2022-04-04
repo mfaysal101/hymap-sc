@@ -2,9 +2,9 @@
 CXX  = mpic++
 LINK = $(CXX)
 #CXXFLAGS = -I -Wall -g 
-CXXFLAGS = -g -Wall -O3 -fopenmp --std=c++11 -fsanitize=undefined -I/home/mfaysal/asa_opt/include #-I #-Wall -O3 -funroll-loops -pipe 
-#CXXFLAGS = -g -Wall -fopenmp #-I #-Wall -O3 -funroll-loops -pipe 
-LFLAGS =  -g -fopenmp -Wall -Werror -O3 -fsanitize=undefined -fuse-ld=gold
+CXXFLAGS = -g -Wall -O3 -fopenmp --std=c++11 -I/home/mfaysal/asa_opt/include
+#CXXFLAGS = -g -Wall -fopenmp 
+LFLAGS =  -g -fopenmp -Wall -Werror -O3
 
 LIB=-L/home/mfaysal/asa_opt/lib/
 LDFLAGS="-Wl,-rpath,/home/mfaysal/asa_opt/lib/"

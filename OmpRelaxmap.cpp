@@ -54,8 +54,14 @@ int iterations_updateMembers;
 int iteration_convertModules;
 int iteration_prioritizeMove;
 int iteration_prioritizeSpMove;
-vector<double> iterations_times;
-vector<double> iterationwise_hashtimes;
+
+double asa_timer;
+double baseline_timer;
+double gatherCAM_timer;
+double overflow_timer;
+
+vector<double>iterationwise_times;
+
 
 unsigned stou(char *s) {
 	return strtoul(s, (char **) NULL, 10);
@@ -123,6 +129,11 @@ int main(int argc, char *argv[]) {
 	iteration_convertModules = 0;
 	iteration_prioritizeMove = 0;
 	iteration_prioritizeSpMove = 0;
+	
+	asa_timer = 0.0;
+	baseline_timer = 0.0;
+	gatherCAM_timer = 0.0;
+	overflow_timer = 0.0;
 
 
 
@@ -423,13 +434,18 @@ int main(int argc, char *argv[]) {
 			printf("========prioritizeSpNodeCommunicationTime:%0.9f========\n", prioritizeSpNodeCommunicationTime*(1e-9));
 			printf("========prioritizeNodeSyncTime:%0.9f========\n", prioritizeNodeSyncTime*(1e-9));
 			printf("========prioritizeSpNodeSyncTime:%0.9f========\n", prioritizeSpNodeSyncTime*(1e-9));
-			
-			for(int k = 0; k < iterations_times.size(); k++)
-			{
-				printf("iterations_times[%d]:%0.9f, iterationwise_hashtimes[%d]:%0.9f\n", k, iterations_times[k]*(1e-9), k, iterationwise_hashtimes[k]*(1e-9));
-			}
-			
+			printf("========baseline_timer:%0.9f===========\n", baseline_timer*(1e-9));
+			printf("========asa_timer:%0.9f===========\n", asa_timer*(1e-9));
+			printf("========gatherCAM_timer:%0.9f===========\n", gatherCAM_timer*(1e-9));
+			printf("========overflow_timer:%0.9f============\n", overflow_timer*(1e-9));
+
+						
 			/*
+			for(int k = 0; k < iterationwise_times.size(); k++)
+			{
+				printf("iterationwise_times[%d]:%0.9f, iterationwise_basetimes[%d]:%0.9f, iterationwise_asatimes[%d]:%0.9f\n", k, iterationwise_times[k]*(1e-9), k, iterationwise_basetimes[k], k, iterationwise_asatimes[k]);
+			}
+
 			for(int k = 0; k < 68; k++)
 			{
 				printf("threadtimes[%d]:%0.9f\n", k, threadtimes[k]*(1e-9));
